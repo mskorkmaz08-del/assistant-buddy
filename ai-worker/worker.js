@@ -2,6 +2,8 @@
 // Secrets/vars (set in the Cloudflare dashboard): GEMINI_API_KEY (secret), ALLOWED_ORIGIN (e.g. https://yourname.github.io),
 // MODEL (optional, defaults to gemini-2.5-flash).
 // Sign-in and sync between devices also needs a KV namespace bound as BUDDY_KV.
+// Feedback (ideas, uncomfortable things, errors) becomes GitHub issues: GITHUB_TOKEN (secret, Issues read/write
+// on the repo only) and GITHUB_REPO (e.g. yourname/assistant-buddy). Without them, feedback is kept in BUDDY_KV.
 
 const SYSTEM = `You are a cute, kind planning buddy (a little bear, panda or cat) inside a planner app for teenage girls.
 Help them plan study, homework, hobbies, routines and self-care. Be warm, encouraging and short (max ~90 words).
@@ -120,6 +122,47 @@ async function account(request, env, headers) {
   return new Response('Not found', { status: 404, headers });
 }
 
+// ---------- feedback from the app's Settings page ----------
+const KINDS = { idea: 'Idea', uncomfortable: 'Uncomfortable', error: 'Error' };
+async function feedback(request, env, headers) {
+  if (request.method !== 'POST') return new Response('Not found', { status: 404, headers });
+  let body;
+  try { body = await request.json(); } catch (e) { return json({ error: 'Bad request' }, 400, headers); }
+  const kind = KINDS[body.kind] ? body.kind : 'idea';
+  const text = String(body.text || '').trim().slice(0, 2000);
+  if (!text) return json({ error: 'Empty message' }, 400, headers);
+  // a gentle limit so a stuck button can't flood the repo
+  if (env.BUDDY_KV) {
+    const ip = request.headers.get('CF-Connecting-IP') || 'x';
+    const key = 'rate:' + ip + ':' + new Date().toISOString().slice(0, 13);
+    const n = +(await env.BUDDY_KV.get(key) || 0);
+    if (n >= 20) return json({ error: 'Too many messages, try later.' }, 429, headers);
+    await env.BUDDY_KV.put(key, String(n + 1), { expirationTtl: 7200 });
+  }
+  const from = String(body.from || 'someone').slice(0, 30);
+  const d = body.details && typeof body.details === 'object' ? body.details : {};
+  const details = ['App version: ' + String(d.version || '?').slice(0, 20), 'Device: ' + String(d.device || '?').slice(0, 200),
+    'Screen: ' + String(d.screen || '?').slice(0, 20), 'Installed on home screen: ' + (d.installed ? 'yes' : 'no'), 'Theme: ' + String(d.theme || '?').slice(0, 10)];
+  const errors = Array.isArray(d.errors) ? d.errors.slice(0, 5).map((x) => '- `' + String(x).slice(0, 300).replace(/`/g, "'") + '`') : [];
+  const issueBody = '> ' + text.replace(/\n/g, '\n> ') + '\n\nFrom: ' + from + ' · ' + String(body.at || new Date().toISOString()).slice(0, 30) +
+    '\n\n<details><summary>Technical details</summary>\n\n' + details.join('\n') + (errors.length ? '\n\nRecent errors:\n' + errors.join('\n') : '') + '\n</details>';
+  const title = '[' + KINDS[kind] + '] ' + text.split('\n')[0].slice(0, 70);
+  if (env.GITHUB_TOKEN && env.GITHUB_REPO) {
+    const res = await fetch('https://api.github.com/repos/' + env.GITHUB_REPO + '/issues', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + env.GITHUB_TOKEN, 'Accept': 'application/vnd.github+json', 'User-Agent': 'bear-buddy-worker', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: title, body: issueBody, labels: [kind] })
+    });
+    if (!res.ok) return json({ error: 'Could not save right now.' }, 502, headers);
+    return json({ ok: true }, 200, headers);
+  }
+  if (env.BUDDY_KV) {
+    await env.BUDDY_KV.put('feedback:' + Date.now() + ':' + kind, JSON.stringify({ title: title, body: issueBody }));
+    return json({ ok: true }, 200, headers);
+  }
+  return json({ error: 'Feedback is not set up yet.' }, 501, headers);
+}
+
 export default {
   async fetch(request, env) {
     const origin = request.headers.get('Origin') || '';
@@ -129,6 +172,7 @@ export default {
     if (allowed.length && !allowed.includes(origin)) return new Response('Forbidden', { status: 403, headers });
     const path = new URL(request.url).pathname;
     if (path === '/account' || path === '/data' || path === '/logout') return account(request, env, headers);
+    if (path === '/feedback') return feedback(request, env, headers);
     if (request.method !== 'POST') return new Response('Not found', { status: 404, headers });
 
     if (!env.GEMINI_API_KEY) return json({ error: 'AI is not set up yet.' }, 501, headers);

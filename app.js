@@ -58,7 +58,7 @@
   const SERVER = String(CFG.server || '').replace(/\/+$/, '');
   const AI_URL = CFG.aiEndpoint || SERVER;
   const ACCOUNT_KEY = 'bearbuddy:account';
-  const LOCAL_ONLY = ['notified', 'dirty', 'syncedAt']; // per-device bookkeeping, never uploaded
+  const LOCAL_ONLY = ['notified', 'dirty', 'syncedAt', 'feedbackQueue']; // per-device bookkeeping, never uploaded
   const sync = { timer: null, busy: false, status: '' };
   let account = null;
   try { account = JSON.parse(localStorage.getItem(ACCOUNT_KEY) || 'null'); } catch (e) { /* storage blocked */ }
@@ -131,6 +131,8 @@
   const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   const STANDALONE = (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
   const NEEDS_INSTALL = IS_IOS && !STANDALONE;
+  const IS_ANDROID = /Android/i.test(navigator.userAgent);
+  const ANDROID_INSTALL = IS_ANDROID && !STANDALONE;
 
   const state = load();
   const ui = { view: state.profile ? 'today' : 'onboard', weekDay: null, draft: null, onboard: { kind: 'bear', colors: {} }, aiBusy: false };
@@ -235,6 +237,7 @@
     back: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>',
     lock: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>',
     send: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4z"/></svg>',
+    gear: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
     timer: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M9 2h6"/></svg>',
     play: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>',
     pause: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14"/></svg>',
@@ -273,7 +276,7 @@
     return '<header class="top"><div><p class="sub">' + sub + '</p><h1>' + title + '</h1></div><div class="top-btns">' +
       '<button class="icon-btn' + (timer.running ? ' on' : '') + '" data-action="focus" aria-label="Focus timer">' + ICON.timer + '</button>' +
       '<button class="icon-btn' + (s.music ? ' on' : '') + '" data-action="music" aria-pressed="' + s.music + '" aria-label="Background music">' + ICON.music + '</button>' +
-      '<button class="icon-btn' + (s.sound ? ' on' : '') + '" data-action="sound" aria-pressed="' + s.sound + '" aria-label="Click sounds">' + (s.sound ? ICON.sound : ICON.mute) + '</button>' +
+      '<button class="icon-btn' + (ui.view === 'settings' ? ' on' : '') + '" data-action="go" data-view="settings" aria-label="Settings">' + ICON.gear + '</button>' +
       '</div></header>';
   }
   function nav() {
@@ -405,10 +408,8 @@
       '<div class="bubble"><b class="big">' + s + '-day streak</b>' + (next ? (next.days - best) + ' more day' + (next.days - best === 1 ? '' : 's') + ' to unlock the ' + next.name.toLowerCase() + '!' : 'You unlocked every outfit!') + '</div></section>' +
       '<section class="card"><h2>Tasks done, last 7 days</h2><div class="chart">' + bars + '</div></section>' +
       '<section class="card"><h2>' + esc(p.buddyName) + '’s closet</h2><div class="outfits">' + items + '</div></section>' +
-      accountCard() +
-      (NEEDS_INSTALL ? installCard() : '') +
       '<section class="card"><h2>Colour</h2><div class="swatches">' + sw + '</div>' +
-      '<div class="row"><button class="ghost small" data-action="setup">Plan my week with me</button><button class="ghost small" data-action="tour">Show me around again</button><button class="ghost small" data-action="rebuddy">Choose a different buddy</button><button class="ghost small" data-action="notify">' + ICON.bell + ' Allow reminders</button></div></section>';
+      '<div class="row"><button class="ghost small" data-action="rebuddy">Choose a different buddy</button><button class="ghost small" data-action="go" data-view="settings">' + ICON.gear + ' Settings</button></div></section>';
     return header(esc(p.buddyName), 'Your buddy') + '<main class="screen">' + body + '</main>' + nav();
   }
 
@@ -479,8 +480,9 @@
     const sw = (key, label, hint) => '<button type="button" class="switch" role="switch" aria-checked="' + !!t[key] + '" data-action="draft-flag" data-key="' + key + '"><span><b>' + label + '</b><small>' + hint + '</small></span><i></i></button>';
     document.getElementById('sheet-root').innerHTML =
       '<div class="scrim" data-action="close-sheet"></div><div class="sheet" role="dialog" aria-modal="true" aria-label="' + (t.id ? 'Edit task' : 'New task') + '">' +
-      '<div class="sheet-head"><h2>' + (t.id ? 'Edit task' : 'New task') + '</h2><button class="icon-btn" data-action="close-sheet" aria-label="Close">' + ICON.back + '</button></div>' +
-      '<form class="stack" data-form="task">' +
+      '<div class="sheet-head"><button type="button" class="icon-btn" data-action="close-sheet" aria-label="Close">' + ICON.close + '</button><h2>' + (t.id ? 'Edit task' : 'New task') + '</h2>' +
+      '<button type="submit" form="sheet-form" class="head-save">' + (t.id ? 'Save' : 'Add') + '</button></div>' +
+      '<form class="stack" id="sheet-form" data-form="task">' +
       '<label class="field"><span>Task</span><input name="title" maxlength="80" required placeholder="e.g. Biology flashcards" value="' + esc(t.title) + '" autocomplete="off"></label>' +
       '<fieldset><legend>Type</legend><div class="cats">' + chips + '</div></fieldset>' +
       '<div class="two"><label class="field"><span>Day</span><select name="date">' + days + '</select></label>' +
@@ -499,8 +501,9 @@
     const nick = old ? old.nick.value : '';
     document.getElementById('sheet-root').innerHTML =
       '<div class="scrim" data-action="close-account"></div><div class="sheet" role="dialog" aria-modal="true" aria-label="' + (up ? 'Make an account' : 'Sign in') + '">' +
-      '<div class="sheet-head"><h2>' + (up ? 'Make an account' : 'Sign in') + '</h2><button class="icon-btn" data-action="close-account" aria-label="Close">' + ICON.back + '</button></div>' +
-      '<form class="stack" data-form="account"><p class="hint">' + (up ? 'Pick a nickname and a password. Sign in with them on your other phone or iPad to see the same plan and buddy.' : 'Use the nickname and password you made on your other device.') + '</p>' +
+      '<div class="sheet-head"><button type="button" class="icon-btn" data-action="close-account" aria-label="Close">' + ICON.close + '</button><h2>' + (up ? 'Make an account' : 'Sign in') + '</h2>' +
+      '<button type="submit" form="sheet-form" class="head-save"' + (sync.busy ? ' disabled' : '') + '>' + (up ? 'Create' : 'Sign in') + '</button></div>' +
+      '<form class="stack" id="sheet-form" data-form="account"><p class="hint">' + (up ? 'Pick a nickname and a password. Sign in with them on your other phone or iPad to see the same plan and buddy.' : 'Use the nickname and password you made on your other device.') + '</p>' +
       '<label class="field"><span>Nickname</span><input name="nick" maxlength="20" value="' + esc(nick) + '" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" required></label>' +
       '<label class="field"><span>Password</span><input name="pass" type="password" maxlength="100" minlength="4" autocomplete="' + (up ? 'new-password' : 'current-password') + '" required></label>' +
       (ui.accountErr ? '<p class="err" role="alert">' + esc(ui.accountErr) + '</p>' : '') +
@@ -1041,6 +1044,106 @@
     if (e.key === 'Enter' && e.target.dataset && e.target.dataset.setup === 'newHobby') { e.preventDefault(); setupActions['setup-add-hobby'](); }
   });
 
+  // ---------- settings, dark mode, install, and feedback ----------
+  const APP_VERSION = '2026.10.30';
+  const FEEDBACK = {
+    idea: { name: 'Idea', icon: '💡', ask: 'What’s your idea? Anything you wish the app could do.', ph: 'I wish the app could…' },
+    uncomfortable: { name: 'Uncomfortable', icon: '😣', ask: 'What felt awkward or annoying? Tell me where it happened.', ph: 'When I tap… it…' },
+    error: { name: 'Error', icon: '🐞', ask: 'What went wrong? What did you do right before? I’ll attach some technical details for you.', ph: 'I tapped… and then…' }
+  };
+  const recentErrors = [];
+  window.addEventListener('error', (e) => { recentErrors.push(String(e.message || e).slice(0, 300) + (e.filename ? ' @ ' + e.filename.split('/').pop() + ':' + e.lineno : '')); recentErrors.splice(0, recentErrors.length - 5); });
+  window.addEventListener('unhandledrejection', (e) => { recentErrors.push('Promise: ' + String(e.reason && e.reason.message || e.reason).slice(0, 300)); recentErrors.splice(0, recentErrors.length - 5); });
+
+  function applyTheme() {
+    const t = state.settings.theme || 'auto';
+    document.documentElement.dataset.theme = t;
+    const dark = t === 'dark' || (t === 'auto' && window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches);
+    const meta = document.querySelector('meta[name=theme-color]');
+    if (meta) meta.content = dark ? '#1D1820' : '#FFF6F2';
+  }
+  if (window.matchMedia) { try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme); } catch (e) { /* old Safari */ } }
+
+  // Android (Chrome, Samsung Internet) offers a real install prompt; keep it for the Settings button.
+  let installEvt = null;
+  window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installEvt = e; if (ui.view === 'settings') render(); });
+  window.addEventListener('appinstalled', () => { installEvt = null; toast('Installed! Find me on your home screen.'); });
+
+  function viewSettings() {
+    const s = state.settings;
+    const theme = s.theme || 'auto';
+    const seg = [['light', 'Light'], ['dark', 'Dark'], ['auto', 'Same as phone']].map((o) => '<button class="seg-btn' + (theme === o[0] ? ' sel' : '') + '" data-action="theme" data-theme="' + o[0] + '" aria-pressed="' + (theme === o[0]) + '">' + o[1] + '</button>').join('');
+    const sw = (action, on, label, hint) => '<button type="button" class="switch" role="switch" aria-checked="' + !!on + '" data-action="' + action + '"><span><b>' + label + '</b><small>' + hint + '</small></span><i></i></button>';
+    const notif = !('Notification' in window) ? 'Not available in this browser' : Notification.permission === 'granted' ? 'On' : Notification.permission === 'denied' ? 'Blocked in your phone settings' : 'Off';
+    const fb = Object.keys(FEEDBACK).map((k) => '<button class="fb-btn fb-' + k + '" data-action="feedback" data-kind="' + k + '"><span class="fb-icon" aria-hidden="true">' + FEEDBACK[k].icon + '</span><b>' + FEEDBACK[k].name + '</b></button>').join('');
+    const queued = (state.feedbackQueue || []).length;
+    const body =
+      '<section class="card"><h2>Look</h2><div class="seg" role="group" aria-label="Theme">' + seg + '</div></section>' +
+      '<section class="card switches">' + sw('sound', s.sound, 'Click sounds', 'Soft taps and pops') + sw('music', s.music, 'Background music', 'Cosy lo-fi while you plan') + '</section>' +
+      '<section class="card"><h2>Reminders</h2><p class="hint">Reminders: <b>' + notif + '</b>. I remind you 15 minutes before a task.</p><div class="row"><button class="ghost small" data-action="notify">' + ICON.bell + ' Allow reminders</button></div></section>' +
+      (NEEDS_INSTALL ? installCard() : '') +
+      (ANDROID_INSTALL || installEvt ? androidInstallCard() : '') +
+      accountCard() +
+      '<section class="card"><h2>Buddy and plan</h2><div class="row"><button class="ghost small" data-action="setup">Plan my week with me</button><button class="ghost small" data-action="tour">Show me around again</button><button class="ghost small" data-action="rebuddy">Choose a different buddy</button></div></section>' +
+      '<section class="card"><h2>Tell us about the app</h2><p class="hint">Got an idea, something that feels awkward, or an error? Send it and we’ll fix it.</p><div class="fb-row">' + fb + '</div>' +
+      (queued ? '<p class="hint small-note">' + queued + ' message' + (queued === 1 ? '' : 's') + ' waiting to send.</p>' : '') + '</section>' +
+      '<p class="version">Bear Buddy · version ' + APP_VERSION + '</p>';
+    return header('Settings', 'Make it yours') + '<main class="screen">' + body + '</main>' + nav();
+  }
+
+  function openFeedback(kind) { closeSheet(); ui.feedback = kind; lockScroll(); renderFeedback(); }
+  function closeFeedback() { ui.feedback = null; document.getElementById('sheet-root').innerHTML = ''; unlockScroll(); }
+  function renderFeedback() {
+    const f = FEEDBACK[ui.feedback];
+    const old = document.querySelector('form[data-form=feedback] textarea');
+    const text = old ? old.value : '';
+    const chips = Object.keys(FEEDBACK).map((k) => '<button type="button" class="chip' + (k === ui.feedback ? ' sel' : '') + '" data-action="feedback-kind" data-kind="' + k + '" aria-pressed="' + (k === ui.feedback) + '">' + FEEDBACK[k].icon + ' ' + FEEDBACK[k].name + '</button>').join('');
+    document.getElementById('sheet-root').innerHTML =
+      '<div class="scrim" data-action="close-feedback"></div><div class="sheet" role="dialog" aria-modal="true" aria-label="Send ' + f.name.toLowerCase() + '">' +
+      '<div class="sheet-head"><button type="button" class="icon-btn" data-action="close-feedback" aria-label="Close">' + ICON.close + '</button><h2>Tell us</h2>' +
+      '<button type="submit" form="sheet-form" class="head-save"' + (ui.fbBusy ? ' disabled' : '') + '>Send</button></div>' +
+      '<form class="stack" id="sheet-form" data-form="feedback"><div class="chips wrap">' + chips + '</div>' +
+      '<div class="setup-talk"><div class="setup-buddy">' + buddy('happy', 70) + '</div><div class="bubble setup-q">' + f.ask + '</div></div>' +
+      '<label class="field"><span class="sr">Your message</span><textarea name="text" rows="6" maxlength="2000" placeholder="' + f.ph + '" required>' + esc(text) + '</textarea></label>' +
+      '<button class="primary" type="submit"' + (ui.fbBusy ? ' disabled' : '') + '>' + (ui.fbBusy ? 'Sending…' : 'Send') + '</button></form></div>';
+  }
+  async function sendFeedbackItem(item) {
+    const res = await fetch(SERVER + '/feedback', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(item) });
+    if (!res.ok) throw new Error('feedback ' + res.status);
+  }
+  async function submitFeedback(form) {
+    const text = form.text.value.trim();
+    if (!text) { form.text.focus(); return; }
+    const item = {
+      kind: ui.feedback, text: text.slice(0, 2000),
+      from: (account && account.name) || (state.profile && state.profile.name) || 'someone',
+      details: { version: APP_VERSION, device: navigator.userAgent.slice(0, 200), screen: innerWidth + 'x' + innerHeight, installed: STANDALONE, theme: state.settings.theme || 'auto', errors: ui.feedback === 'error' ? recentErrors.slice() : [] },
+      at: new Date().toISOString()
+    };
+    ui.fbBusy = true; renderFeedback();
+    let sent = false;
+    if (SERVER) { try { await sendFeedbackItem(item); sent = true; } catch (e) { /* keep it for later */ } }
+    ui.fbBusy = false;
+    if (!sent) { state.feedbackQueue = (state.feedbackQueue || []).concat([item]).slice(-20); saveLocal(); }
+    closeFeedback(); play('celebrate');
+    toast(sent ? 'Sent! Thank you, this really helps.' : 'Saved! I’ll send it as soon as I can.');
+    if (ui.view === 'settings') render();
+  }
+  async function flushFeedback() {
+    if (!SERVER || !(state.feedbackQueue || []).length) return;
+    const q = state.feedbackQueue.slice();
+    for (const item of q) {
+      try { await sendFeedbackItem(item); state.feedbackQueue.shift(); saveLocal(); } catch (e) { return; }
+    }
+  }
+
+  // Samsung and other Android phones: one-tap install when the browser offers it, otherwise the menu steps.
+  function androidInstallCard() {
+    return '<section class="card install"><h2>Put me on your home screen</h2>' +
+      (installEvt ? '<p class="hint">One tap and I open like a real app.</p><div class="row"><button class="primary small" data-action="install-app">Install app</button></div>'
+        : '<ol><li>Tap the menu: <b>⋮</b> in Chrome, or <b>☰</b> in Samsung Internet.</li><li>Choose <b>Add to Home screen</b> or <b>Install app</b>.</li><li>Open me from the new icon.</li></ol>') + '</section>';
+  }
+
   function tourSteps() {
     const b = esc(state.profile.buddyName);
     const n = esc(state.profile.name || 'friend');
@@ -1053,8 +1156,9 @@
       { view: 'closet', target: '.outfits', mood: 'dancing', text: 'Keep your streak going to unlock outfits for me: a party dress, then dino suits!' },
       { view: 'chat', target: '.chips', mood: 'happy', text: 'Stuck? Ask me to plan a study week or get ready for a test, and add my plan with one tap.' },
       { view: 'today', target: '[data-action=focus]', mood: 'neutral', text: 'Need to study? Open the focus timer: 25 minutes of focus, then a break. You can add rain or lo-fi sounds too.' },
-      { view: 'today', target: '[data-action=music]', mood: 'happy', text: 'Turn cosy music and click sounds on or off up here.' },
-      NEEDS_INSTALL ? { view: 'closet', target: '.install', mood: 'happy', text: 'On iPhone or iPad, add me to your Home Screen with Safari’s Share button. Then I can send reminders and go full screen!' } : null,
+      { view: 'today', target: '[data-action=music]', mood: 'happy', text: 'Turn cosy music on or off here. The gear opens Settings: dark mode, sounds, and a place to send ideas or report problems.' },
+      NEEDS_INSTALL ? { view: 'settings', target: '.install', mood: 'happy', text: 'On iPhone or iPad, add me to your Home Screen with Safari’s Share button. Then I can send reminders and go full screen!' } : null,
+      ANDROID_INSTALL ? { view: 'settings', target: '.install', mood: 'happy', text: 'Put me on your home screen so I open like a real app! Tap Install app, or use your browser’s menu.' } : null,
       { view: 'today', mood: 'dancing', text: 'That’s everything! Let’s plan something nice today. I’m cheering for you!' }
     ].filter(Boolean);
   }
@@ -1108,7 +1212,7 @@
   // ---------- render + events ----------
   function render() {
     const app = document.getElementById('app');
-    const views = { setup: viewSetup, onboard: viewOnboard, today: viewToday, week: viewWeek, closet: viewCloset, chat: viewChat, focus: viewFocus };
+    const views = { settings: viewSettings, setup: viewSetup, onboard: viewOnboard, today: viewToday, week: viewWeek, closet: viewCloset, chat: viewChat, focus: viewFocus };
     if (!state.profile) ui.view = 'onboard';
     app.innerHTML = views[ui.view]();
     app.dataset.view = ui.view;
@@ -1157,6 +1261,11 @@
       Notification.requestPermission().then((p) => toast(p === 'granted' ? 'Reminders are on!' : 'Okay! I’ll remind you inside the app instead.'));
     },
     'close-sheet'() { closeSheet(); },
+    theme(el) { state.settings.theme = el.dataset.theme; save(); applyTheme(); play('tap'); render(); },
+    'install-app'() { if (!installEvt) return; installEvt.prompt(); installEvt.userChoice.finally(() => { installEvt = null; render(); }); },
+    feedback(el) { play('pop'); openFeedback(el.dataset.kind); },
+    'feedback-kind'(el) { ui.feedback = el.dataset.kind; play('tap'); renderFeedback(); },
+    'close-feedback'() { closeFeedback(); },
     account(el) { play('tap'); openAccount(el.dataset.mode); },
     'close-account'() { closeAccount(); },
     'sync-now'() { play('tap'); setSyncStatus('Syncing…'); if (state.dirty) push(); else pull(); },
@@ -1228,6 +1337,7 @@
     const f = e.target;
     e.preventDefault();
     if (f.dataset.form === 'account') { submitAccount(f); return; }
+    if (f.dataset.form === 'feedback') { submitFeedback(f); return; }
     if (f.dataset.form === 'onboard') {
       const k = kindInfo(ui.onboard.kind);
       const prev = state.profile || {};
@@ -1263,7 +1373,7 @@
       sendChat(q);
     }
   });
-  document.addEventListener('keydown', (e) => { if (e.key !== 'Escape') return; if (ui.draft) closeSheet(); if (ui.account) closeAccount(); });
+  document.addEventListener('keydown', (e) => { if (e.key !== 'Escape') return; if (ui.draft) closeSheet(); if (ui.account) closeAccount(); if (ui.feedback) closeFeedback(); });
   window.addEventListener('resize', () => { if (ui.tour != null) renderTour(); });
   // Keep sheets above the on-screen keyboard: track how much of the screen the keyboard covers.
   if (window.visualViewport) {
@@ -1278,6 +1388,39 @@
     vv.addEventListener('scroll', fit);
     fit();
   }
+  // Swipe a sheet down to close it: drag from the top bar, or from anywhere once the sheet is scrolled to the top.
+  const drag = { y0: 0, dy: 0, el: null, t0: 0 };
+  document.addEventListener('touchstart', (e) => {
+    const sheet = e.target.closest && e.target.closest('.sheet');
+    if (!sheet || e.touches.length !== 1) return;
+    if (sheet.scrollTop > 0 && !e.target.closest('.sheet-head')) return;
+    if (/INPUT|SELECT|TEXTAREA/.test(e.target.tagName)) return;
+    drag.el = sheet; drag.y0 = e.touches[0].clientY; drag.dy = 0; drag.t0 = Date.now();
+  }, { passive: true });
+  document.addEventListener('touchmove', (e) => {
+    if (!drag.el) return;
+    drag.dy = e.touches[0].clientY - drag.y0;
+    if (drag.dy <= 0) { drag.el.style.transform = ''; return; }
+    if (e.cancelable) e.preventDefault(); // pull the sheet, not the page
+    drag.el.style.transition = 'none';
+    drag.el.style.transform = 'translate(-50%, ' + drag.dy + 'px)';
+  }, { passive: false });
+  document.addEventListener('touchend', () => {
+    const el = drag.el;
+    if (!el) return;
+    drag.el = null;
+    const fast = drag.dy > 40 && Date.now() - drag.t0 < 250;
+    el.style.transition = 'transform .22s ease-out';
+    if (drag.dy > 110 || fast) {
+      if (document.activeElement) document.activeElement.blur();
+      el.style.transform = 'translate(-50%, 110%)';
+      const scrim = document.querySelector('#sheet-root .scrim');
+      if (scrim) scrim.style.opacity = '0';
+      setTimeout(() => { if (ui.account) closeAccount(); else if (ui.feedback) closeFeedback(); else closeSheet(); }, 200);
+    } else {
+      el.style.transform = '';
+    }
+  });
   // the field you tap scrolls into view inside the sheet, not the page
   document.addEventListener('focusin', (e) => {
     const sheet = e.target.closest && e.target.closest('.sheet');
@@ -1298,15 +1441,17 @@
     document.addEventListener('pointerdown', resume);
   }
 
+  applyTheme();
   render();
   checkReminders();
   setInterval(checkReminders, 30000);
   // redraw at midnight / when coming back to the tab so moods and dates stay right
-  document.addEventListener('visibilitychange', () => { if (!document.hidden && !ui.draft && !ui.account) { render(); pull(); } });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && !ui.draft && !ui.account && !ui.feedback) { render(); pull(); } });
   // keep devices in step: check for changes now and then, and send unsaved ones
   pull();
   setInterval(() => { if (!document.hidden) pull(); }, 60000);
-  window.addEventListener('online', () => { if (state.dirty) push(); else pull(); });
+  window.addEventListener('online', () => { if (state.dirty) push(); else pull(); flushFeedback(); });
+  flushFeedback();
 
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
     navigator.serviceWorker.register('sw.js').catch(() => {});

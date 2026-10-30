@@ -11,6 +11,7 @@ A cosy planner for planning your day and week, with a bear, panda or cat buddy w
 - **Focus timer**: a full-screen Pomodoro timer (25 min focus, 5 and 15 min breaks) with the buddy reading on a cosy couch, and rain, lo-fi or YouTube lo-fi sounds.
 - **Tutorial**: the chosen buddy shows you around the first time (and again from the Buddy tab).
 - Reminders 15 minutes before a task, cosy click sounds, and optional lo-fi background music (both can be turned off).
+- **Settings** (gear icon): light, dark or same-as-phone theme, sounds, reminders, install button, account, and **Tell us about the app** (Idea, Uncomfortable, Error).
 - **Accounts**: sign in with a nickname and password to use the same plan on a phone and an iPad.
 - Works offline, on iPhone, iPad and Android, and can be added to the home screen.
 
@@ -36,6 +37,7 @@ One small free Cloudflare Worker does both: it keeps everyone's plans for syncin
    - `ALLOWED_ORIGIN`: `https://<your-username>.github.io` so only your app can use it.
    - `GEMINI_API_KEY` (type **Secret**, optional, for the AI helper): a free key from https://aistudio.google.com/apikey.
    - `MODEL` (optional): defaults to `gemini-2.5-flash`.
+   - `GITHUB_REPO`: `<your-username>/assistant-buddy`, and `GITHUB_TOKEN` (type **Secret**): a fine-grained GitHub token for only this repository with **Issues: Read and write** (GitHub → Settings → Developer settings → Fine-grained tokens). Feedback from the app then arrives as issues labelled `idea`, `uncomfortable` or `error`. Without these, feedback is kept in the KV storage instead.
 6. Copy the Worker's address (like `https://bear-buddy.<name>.workers.dev`) into `config.js` as `server`, and upload the change.
 
 Then a **Use me on all your devices** card appears on the Buddy tab, and "I already have an account" on the first screen. Make an account on one device and sign in with the same nickname and password on the others. Changes sync within a few seconds while online, and the newest change wins. Passwords are stored hashed (never in plain text).
@@ -44,6 +46,7 @@ Without `GEMINI_API_KEY`, or if the AI is unreachable, the buddy uses its built-
 
 ## Notes
 
+- **Samsung and other Android phones:** open the link in Chrome or Samsung Internet. Settings shows an **Install app** button (or use the browser menu → Add to Home screen). Reminders work without installing.
 - **iPhone and iPad:** open the link in Safari and use Share → Add to Home Screen. That makes it a full-screen app, and iOS only allows notifications from Home Screen apps. The YouTube lo-fi player needs one tap on its play button on iPhone.
 
 - Reminders show while the app is open or in a recent tab. Reminders for a fully closed app would need a push server, which can be added later.

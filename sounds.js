@@ -233,43 +233,97 @@
     }
   };
 
-  // Rain: looping filtered noise for the steady patter, plus soft random drips.
+  // Rain: a soft wash of pink noise, a layer of tiny drop patter, a low body,
+  // slow gusts, and now and then a gentle roll of thunder far away.
+  function makeBuffer(seconds, fill) {
+    const len = Math.floor(ctx.sampleRate * seconds);
+    const buf = ctx.createBuffer(2, len, ctx.sampleRate);
+    for (let ch = 0; ch < 2; ch++) fill(buf.getChannelData(ch), len);
+    return buf;
+  }
+  function pinkFill(d, len) { // Paul Kellet's pink noise filter
+    let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
+    for (let i = 0; i < len; i++) {
+      const w = Math.random() * 2 - 1;
+      b0 = 0.99886 * b0 + w * 0.0555179; b1 = 0.99332 * b1 + w * 0.0750759; b2 = 0.969 * b2 + w * 0.153852;
+      b3 = 0.8665 * b3 + w * 0.3104856; b4 = 0.55 * b4 + w * 0.5329522; b5 = -0.7616 * b5 - w * 0.016898;
+      d[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + w * 0.5362) * 0.11; b6 = w * 0.115926;
+    }
+  }
+  function brownFill(d, len) { let last = 0; for (let i = 0; i < len; i++) { last = (last + 0.02 * (Math.random() * 2 - 1)) / 1.02; d[i] = last * 3.5; } }
+  function patterFill(d, len) { // hundreds of tiny noisy drop hits per second, each a few milliseconds long
+    const sr = ctx.sampleRate;
+    const drops = Math.floor(len / sr * 380);
+    for (let k = 0; k < drops; k++) {
+      const at = Math.floor(Math.random() * len);
+      const amp = Math.pow(Math.random(), 3) * 0.6;
+      const dur = Math.floor(sr * (0.002 + Math.random() * 0.006));
+      for (let j = 0; j < dur && at + j < len; j++) d[at + j] += (Math.random() * 2 - 1) * amp * Math.exp(-j / (dur / 4));
+    }
+  }
+  let rainBufs = null;
+  function loop(buf, chain, gain) {
+    const s = ctx.createBufferSource();
+    s.buffer = buf; s.loop = true;
+    let node = s;
+    chain.forEach((f) => { node.connect(f); node = f; });
+    const g = ctx.createGain(); g.gain.value = gain;
+    node.connect(g);
+    s.start(0, Math.random() * buf.duration);
+    return { src: s, out: g };
+  }
+  const filt = (type, freq, q) => { const f = ctx.createBiquadFilter(); f.type = type; f.frequency.value = freq; if (q) f.Q.value = q; return f; };
+  function thunder(dest) {
+    const t = ctx.currentTime;
+    const s = ctx.createBufferSource();
+    s.buffer = rainBufs.brown;
+    const lp = filt('lowpass', 140, 0.5);
+    lp.frequency.setValueAtTime(220, t);
+    lp.frequency.exponentialRampToValueAtTime(90, t + 7);
+    const g = ctx.createGain();
+    const peak = 0.35 + Math.random() * 0.35;
+    g.gain.setValueAtTime(0.0001, t);
+    // a slow rolling swell with a couple of bumps, then a long fade: far away, never a crack
+    g.gain.exponentialRampToValueAtTime(peak * 0.5, t + 0.8);
+    g.gain.exponentialRampToValueAtTime(peak, t + 1.8 + Math.random());
+    g.gain.exponentialRampToValueAtTime(peak * 0.6, t + 3.2);
+    g.gain.exponentialRampToValueAtTime(peak * 0.8, t + 4);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 9);
+    s.connect(lp); lp.connect(g); g.connect(dest);
+    s.start(t, Math.random() * 2); s.stop(t + 9.5);
+  }
   const rain = {
     playing: false,
     nodes: null,
     start() {
       playbackSession();
       const c = audio(); if (!c || this.playing) return;
-      const len = c.sampleRate * 3;
-      const buf = c.createBuffer(2, len, c.sampleRate);
-      for (let ch = 0; ch < 2; ch++) {
-        const d = buf.getChannelData(ch);
-        let last = 0;
-        for (let i = 0; i < len; i++) { last = (last + 0.04 * (Math.random() * 2 - 1)) / 1.04; d[i] = last * 3.2; } // brown-ish noise
-      }
-      const src = c.createBufferSource();
-      src.buffer = buf;
-      src.loop = true;
-      const hp = c.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 400;
-      const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 5000;
-      const g = c.createGain();
-      g.gain.setValueAtTime(0.0001, c.currentTime);
-      g.gain.exponentialRampToValueAtTime(0.9, c.currentTime + 2);
-      src.connect(hp); hp.connect(lp); lp.connect(g); g.connect(master);
-      src.start();
-      const drips = setInterval(() => {
-        if (Math.random() < 0.6) note(1800 + Math.random() * 1600, c.currentTime + Math.random() * 0.3, 0.05, { slideTo: 600, vol: 0.02, dest: g });
-      }, 180);
-      this.nodes = { src: src, g: g, drips: drips };
+      if (!rainBufs) rainBufs = { pink: makeBuffer(6, pinkFill), patter: makeBuffer(5, patterFill), brown: makeBuffer(10, brownFill) };
+      const bus = c.createGain();
+      bus.gain.setValueAtTime(0.0001, c.currentTime);
+      bus.gain.exponentialRampToValueAtTime(1, c.currentTime + 2.5);
+      bus.connect(master);
+      const wash = loop(rainBufs.pink, [filt('highpass', 250), filt('lowpass', 5500)], 0.9);
+      const patter = loop(rainBufs.patter, [filt('highpass', 1200), filt('lowpass', 7000)], 0.5);
+      const body = loop(rainBufs.brown, [filt('lowpass', 500)], 0.35);
+      // gusts: the wash gets a little heavier and lighter over ~15 seconds
+      const lfo = c.createOscillator(); lfo.frequency.value = 0.065;
+      const depth = c.createGain(); depth.gain.value = 0.25;
+      lfo.connect(depth); depth.connect(wash.out.gain); lfo.start();
+      [wash, patter, body].forEach((l) => l.out.connect(bus));
+      const self = this;
+      function nextThunder() { self.nodes.thunder = setTimeout(() => { if (self.playing) { thunder(bus); nextThunder(); } }, 20000 + Math.random() * 30000); }
+      this.nodes = { bus: bus, srcs: [wash.src, patter.src, body.src, lfo], thunder: null };
       this.playing = true;
+      nextThunder();
     },
     stop() {
       if (!this.playing) return;
       const n = this.nodes;
-      clearInterval(n.drips);
-      n.g.gain.setValueAtTime(n.g.gain.value, ctx.currentTime);
-      n.g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.8);
-      setTimeout(() => { try { n.src.stop(); } catch (e) { /* already stopped */ } n.g.disconnect(); }, 1000);
+      clearTimeout(n.thunder);
+      n.bus.gain.setValueAtTime(n.bus.gain.value, ctx.currentTime);
+      n.bus.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.8);
+      setTimeout(() => { n.srcs.forEach((s) => { try { s.stop(); } catch (e) { /* already stopped */ } }); n.bus.disconnect(); }, 1000);
       this.playing = false;
     }
   };
