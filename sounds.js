@@ -66,7 +66,7 @@
   };
 
   // Lo-fi hip hop loop: dusty electric-piano jazz chords, a soft swung boom-bap beat,
-  // round bass, an occasional lazy melody note, vinyl crackle and a gentle tape wobble.
+  // round bass, an occasional lazy melody note and a gentle tape wobble.
   const BPM = 74;
   const STEP = 60 / BPM / 4; // one 16th note
   const SWING = 0.18;        // late off-beat 16ths for that lazy feel
@@ -86,7 +86,6 @@
   let noiseBuf = null;
   let wobble = null;
   let drumBus = null;
-  let crackle = null;
   let step = 0;
   let nextStep = 0;
 
@@ -194,24 +193,6 @@
     }
   }
 
-  // Looping vinyl crackle: faint hiss plus random dust pops.
-  function startCrackle() {
-    const len = ctx.sampleRate * 4;
-    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
-    const d = buf.getChannelData(0);
-    for (let i = 0; i < len; i++) {
-      d[i] = (Math.random() * 2 - 1) * 0.012;
-      if (Math.random() < 0.0004) { const a = (Math.random() * 0.5 + 0.2) * (Math.random() < 0.5 ? -1 : 1); for (let k = 0; k < 30 && i + k < len; k++) d[i + k] += a * Math.exp(-k / 6); }
-    }
-    const s = ctx.createBufferSource();
-    s.buffer = buf; s.loop = true;
-    const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 2500; f.Q.value = 0.4;
-    const g = ctx.createGain(); g.gain.value = 0.5;
-    s.connect(f); f.connect(g); g.connect(musicGain);
-    s.start();
-    return s;
-  }
-
   const music = {
     playing: false,
     start() {
@@ -232,7 +213,6 @@
       wobble = c.createGain(); wobble.gain.value = 9; // cents
       lfo.connect(wobble); lfo.start();
       this.lfo = lfo;
-      crackle = startCrackle();
       musicGain.gain.setValueAtTime(0.0001, c.currentTime);
       musicGain.gain.exponentialRampToValueAtTime(0.9, c.currentTime + 2);
       nextStep = c.currentTime + 0.1;
@@ -246,10 +226,9 @@
       clearInterval(musicTimer);
       const g = musicGain;
       const lfo = this.lfo;
-      const cr = crackle;
       g.gain.setValueAtTime(g.gain.value, ctx.currentTime);
       g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.8);
-      setTimeout(() => { g.disconnect(); try { lfo.stop(); cr.stop(); } catch (e) { /* already stopped */ } }, 1000);
+      setTimeout(() => { g.disconnect(); try { lfo.stop(); } catch (e) { /* already stopped */ } }, 1000);
       this.playing = false;
     }
   };

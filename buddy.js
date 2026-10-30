@@ -1,5 +1,5 @@
 // Draws a buddy as an SVG string.
-// kind: bear | panda | cat. mood: neutral | happy | dancing | sad.
+// kind: bear | panda | cat. mood: neutral | happy | dancing | sad | study (glasses on, reading a book).
 // costume: none | bow | dress | dino-green | dino-pink.
 // Head, body, eyes and arm are separate groups so buddy.css can move them on their own.
 (function (root) {
@@ -22,6 +22,7 @@
     const cheek = kind === 'bear' ? '#F6BF78' : '#F8B5BC';
     const dance = mood === 'dancing';
     const sad = mood === 'sad';
+    const study = mood === 'study';
     const paw = dino ? dino.dark : (kind === 'panda' ? INK : fur);
 
     const line = (d, w, c) => '<path d="' + d + '" fill="none" stroke="' + (c || INK) + '" stroke-width="' + (w || 6) + '" stroke-linecap="round" stroke-linejoin="round"/>';
@@ -51,6 +52,10 @@
     if (mood === 'neutral') {
       face += '<g class="bb-eyes">' + eye(64, 104) + eye(136, 104) + '</g>';
       face += line('M90 108 Q95 114 100 108 Q105 114 110 108', 4.5);
+    } else if (study) {
+      // eyes looking down at the book, behind round glasses
+      face += '<g class="bb-eyes"><ellipse cx="64" cy="108" rx="7" ry="6" fill="' + INK + '"/><ellipse cx="136" cy="108" rx="7" ry="6" fill="' + INK + '"/></g>';
+      face += line('M93 118 Q100 123 107 118', 4);
     } else if (mood === 'happy' || dance) {
       face += line('M54 106 Q64 94 74 106') + line('M126 106 Q136 94 146 106');
       face += '<path d="M89 107 Q94.5 113 100 107 Q105.5 113 111 107 Q110 126 100 126 Q90 126 89 107 Z" fill="#E86F7C" stroke="' + INK + '" stroke-width="4.5" stroke-linejoin="round"/>';
@@ -99,7 +104,7 @@
     // arms
     if (dance) {
       s += '<g class="bb-wave">' + arm('M142 156 Q170 150 184 130', 34) + '</g>';
-    } else if (!sad) {
+    } else if (!sad && !study) {
       s += arm('M60 152 Q54 166 64 178', 32) + arm('M140 152 Q146 166 136 178', 32);
     }
     if (sad) {
@@ -127,8 +132,25 @@
       s += '<g class="bb-bow" transform="translate(150 30) rotate(18)"><path d="M0 0 C-10 -18 -34 -14 -30 4 C-28 18 -10 12 0 0 Z M0 0 C10 -18 34 -14 30 4 C28 18 10 12 0 0 Z" fill="#F1648E" stroke="' + INK + '" stroke-width="4.5" stroke-linejoin="round"/>';
       s += '<circle cx="0" cy="0" r="7" fill="#F1648E" stroke="' + INK + '" stroke-width="4.5"/></g>';
     }
+    if (study) {
+      s += '<g class="bb-glasses" fill="#FFFFFF" fill-opacity="0.18" stroke="' + INK + '" stroke-width="5">' +
+        '<circle cx="64" cy="106" r="19"/><circle cx="136" cy="106" r="19"/></g>' + line('M83 104 Q100 96 117 104', 5);
+    }
     s += '</g>';
 
+    if (study) {
+      // arms come forward and the paws hold an open book on the lap
+      s += arm('M58 150 Q48 172 60 186', 30) + arm('M142 150 Q152 172 140 186', 30);
+      s += '<g class="bb-book">';
+      s += '<path d="M46 170 L100 180 L154 170 L154 212 L100 222 L46 212 Z" fill="#B83E62" stroke="' + INK + '" stroke-width="5" stroke-linejoin="round"/>';
+      s += '<path d="M52 166 Q78 162 100 176 L100 214 Q78 202 52 206 Z" fill="#FFFDF8" stroke="' + INK + '" stroke-width="4" stroke-linejoin="round"/>';
+      s += '<path d="M148 166 Q122 162 100 176 L100 214 Q122 202 148 206 Z" fill="#FFFDF8" stroke="' + INK + '" stroke-width="4" stroke-linejoin="round"/>';
+      s += line('M60 178 Q76 176 92 184 M60 188 Q76 186 92 194', 2.5, '#C9B8AE') + line('M140 178 Q124 176 108 184 M140 188 Q124 186 108 194', 2.5, '#C9B8AE');
+      s += '<path class="bb-page" d="M100 176 Q122 162 146 166 L146 206 Q122 202 100 214 Z" fill="#FFF6EA" stroke="' + INK + '" stroke-width="3" stroke-linejoin="round"/>';
+      s += '</g>';
+      s += '<ellipse cx="52" cy="188" rx="13" ry="14" fill="' + paw + '" stroke="' + INK + '" stroke-width="5"/>';
+      s += '<ellipse cx="148" cy="188" rx="13" ry="14" fill="' + paw + '" stroke="' + INK + '" stroke-width="5"/>';
+    }
     if (sad) {
       // arms curl in and the paws hold each other under the chin
       s += arm('M54 152 Q56 176 84 176') + arm('M146 152 Q144 176 116 176');

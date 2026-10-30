@@ -2,12 +2,13 @@
 
 A cosy planner for planning your day and week, with a bear, panda or cat buddy whose mood follows your progress.
 
+- **Plans your week for you**: after choosing a buddy, it asks about grade, school times, extra lessons, hobbies, study and hobby time (with suggestions), dinner and bedtime, then builds a repeating weekly plan. Run it again any time from the Buddy tab.
 - **Choose a buddy**: Biscuit the bear, Mochi the panda or Mallow the cat, in 5 colours each.
 - **Today**: tick off tasks. The buddy waits, gets happy, dances with a mic when everything is done (with confetti), and gets sad in the evening if nothing is done yet.
 - **Week**: see each day, add tasks to any day, and track study, hobby, routine and self-care totals.
 - **Buddy**: streak, last 7 days chart, colour, and a closet of outfits that unlock with streaks: pink bow (free), party dress (3 days), green dino suit (5 days), pink dino suit (7 days).
 - **Ask**: a planning helper. It works offline with built-in plans, or with free Google Gemini AI once the AI worker is set up.
-- **Focus timer**: a full-screen Pomodoro timer (25 min focus, 5 and 15 min breaks) with the buddy in the middle, and rain, lo-fi or YouTube lo-fi sounds.
+- **Focus timer**: a full-screen Pomodoro timer (25 min focus, 5 and 15 min breaks) with the buddy reading on a cosy couch, and rain, lo-fi or YouTube lo-fi sounds.
 - **Tutorial**: the chosen buddy shows you around the first time (and again from the Buddy tab).
 - Reminders 15 minutes before a task, cosy click sounds, and optional lo-fi background music (both can be turned off).
 - **Accounts**: sign in with a nickname and password to use the same plan on a phone and an iPad.

@@ -333,7 +333,7 @@
       '<div class="section-head"><h2>Today’s plan</h2>' + (list.length ? '<span>Tap the circle to tick off</span>' : '') + '</div>';
     if (list.length) body += '<ul class="tasks">' + list.map((t) => taskRow(t, date)).join('') + '</ul>';
     else body += '<div class="empty card"><p>No plans yet. Add your first task, or ask ' + esc(state.profile.buddyName) + ' to help you plan!</p>' +
-      '<div class="row"><button class="primary small" data-action="add">Add a task</button><button class="ghost small" data-action="go" data-view="chat">Help me plan</button></div></div>';
+      '<div class="row"><button class="primary small" data-action="add">Add a task</button>' + (state.planned && state.setup ? '<button class="ghost small" data-action="go" data-view="chat">Help me plan</button>' : '<button class="ghost small" data-action="setup">Plan my week with me</button>') + '</div></div>';
     return header('Hi ' + esc(state.profile.name || 'there') + '!', prettyDate(date)) + '<main class="screen">' + body + '</main>' + nav();
   }
 
@@ -408,7 +408,7 @@
       accountCard() +
       (NEEDS_INSTALL ? installCard() : '') +
       '<section class="card"><h2>Colour</h2><div class="swatches">' + sw + '</div>' +
-      '<div class="row"><button class="ghost small" data-action="tour">Show me around again</button><button class="ghost small" data-action="rebuddy">Choose a different buddy</button><button class="ghost small" data-action="notify">' + ICON.bell + ' Allow reminders</button></div></section>';
+      '<div class="row"><button class="ghost small" data-action="setup">Plan my week with me</button><button class="ghost small" data-action="tour">Show me around again</button><button class="ghost small" data-action="rebuddy">Choose a different buddy</button><button class="ghost small" data-action="notify">' + ICON.bell + ' Allow reminders</button></div></section>';
     return header(esc(p.buddyName), 'Your buddy') + '<main class="screen">' + body + '</main>' + nav();
   }
 
@@ -437,13 +437,32 @@
   }
 
   // ---------- task sheet ----------
+  // While a sheet is open, the page behind it stays put (iOS ignores overflow:hidden on body, so pin it).
+  let lockedY = null;
+  function lockScroll() {
+    if (lockedY != null) return;
+    lockedY = window.scrollY;
+    document.body.style.top = -lockedY + 'px';
+    document.body.classList.add('locked');
+  }
+  function unlockScroll() {
+    if (lockedY == null) return;
+    document.body.classList.remove('locked');
+    document.body.style.top = '';
+    window.scrollTo(0, lockedY);
+    lockedY = null;
+  }
+  const TOUCH = window.matchMedia && matchMedia('(pointer: coarse)').matches;
+
   function openSheet(task, date) {
     ui.draft = task ? Object.assign({}, task) : { id: null, title: '', cat: 'study', date: date || (ui.view === 'week' && ui.weekDay) || today(), time: '', remind: true, repeat: false, done: {} };
+    lockScroll();
     renderSheet();
+    // on phones, let the sheet slide up first instead of throwing the keyboard over it
     const input = document.querySelector('#sheet-root input[name=title]');
-    if (input) input.focus();
+    if (input && !TOUCH && !task) input.focus();
   }
-  function closeSheet() { ui.draft = null; document.getElementById('sheet-root').innerHTML = ''; }
+  function closeSheet() { ui.draft = null; document.getElementById('sheet-root').innerHTML = ''; unlockScroll(); }
   function renderSheet() {
     const t = ui.draft;
     if (!t) return;
@@ -472,8 +491,8 @@
         '<button type="button" class="danger" data-action="delete">' + ICON.trash + ' Delete task</button>' : '') +
       '</form></div>';
   }
-  function openAccount(mode) { closeSheet(); ui.account = mode; ui.accountErr = ''; renderAccount(); const i = document.querySelector('#sheet-root input[name=nick]'); if (i) i.focus(); }
-  function closeAccount() { ui.account = null; document.getElementById('sheet-root').innerHTML = ''; }
+  function openAccount(mode) { closeSheet(); ui.account = mode; ui.accountErr = ''; lockScroll(); renderAccount(); const i = document.querySelector('#sheet-root input[name=nick]'); if (i && !TOUCH) i.focus(); }
+  function closeAccount() { ui.account = null; document.getElementById('sheet-root').innerHTML = ''; unlockScroll(); }
   function renderAccount() {
     const up = ui.account === 'signup';
     const old = document.querySelector('form[data-form=account]');
@@ -645,7 +664,7 @@
 
   // ---------- focus timer (pomodoro) ----------
   const MODES = {
-    focus: { label: 'Focus', min: 25, mood: 'neutral', line: 'Let’s focus together. You’ve got this!' },
+    focus: { label: 'Focus', min: 25, mood: 'study', line: 'Let’s study together. You’ve got this!' },
     short: { label: 'Break', min: 5, mood: 'happy', line: 'Break time! Stretch, sip some water.' },
     long: { label: 'Long break', min: 15, mood: 'dancing', line: 'Long break, you earned it!' }
   };
@@ -653,7 +672,7 @@
   const RING = 2 * Math.PI * 128;
 
   const FOCUS_SOUNDS = [['off', 'Quiet'], ['rain', 'Rain'], ['lofi', 'Lo-fi'], ['youtube', 'YouTube lo-fi']];
-  function focusSound() { return state.settings.focusSound || 'off'; }
+  function focusSound() { return state.settings.focusSound || 'lofi'; }
   // plays the chosen focus sound; the YouTube player lives outside #app so re-renders don't restart it
   function applyFocusSound(on) {
     const s = on ? focusSound() : 'off';
@@ -693,7 +712,8 @@
       '<button class="icon-btn soft" data-action="fullscreen" aria-label="Full screen">' + ICON.expand + '</button></div>' +
       '<div class="ring-wrap"><svg class="ring" viewBox="0 0 280 280" aria-hidden="true"><circle cx="140" cy="140" r="128" class="ring-bg"/>' +
       '<circle cx="140" cy="140" r="128" class="ring-fg" id="ring-fg" stroke-dasharray="' + RING.toFixed(1) + '" stroke-dashoffset="0" transform="rotate(-90 140 140)"/></svg>' +
-      '<div class="ring-buddy" id="ring-buddy">' + buddy(timer.running ? m.mood : 'neutral', 130) + '</div></div>' +
+      (timer.mode === 'focus' ? '<div class="ring-buddy nook" id="ring-buddy">' + nook() + buddy('study', 130) + '</div></div>'
+        : '<div class="ring-buddy" id="ring-buddy">' + buddy(timer.running ? m.mood : 'neutral', 130) + '</div></div>') +
       '<p class="focus-time" id="focus-time" role="timer" aria-live="off">' + fmtLeft(timerLeft()) + '</p>' +
       '<p class="focus-line">' + m.line + '</p>' +
       (timer.askDone && task && !isDone(task, today()) ? '<button class="ghost small" data-action="toggle" data-id="' + task.id + '" data-date="' + today() + '">' + ICON.check + ' Finished \u201c' + esc(task.title) + '\u201d? Tick it off</button>' : pick) +
@@ -703,6 +723,25 @@
       '<div class="sounds" role="group" aria-label="Focus sound">' + FOCUS_SOUNDS.map((s) => '<button class="snd' + (focusSound() === s[0] ? ' sel' : '') + '" data-action="focus-sound" data-sound="' + s[0] + '" aria-pressed="' + (focusSound() === s[0]) + '">' + s[1] + '</button>').join('') + '</div>' +
       '<div class="focus-foot"><div class="dots" aria-label="Rounds before a long break">' + dots + '</div><span>' + done + ' focus session' + (done === 1 ? '' : 's') + ' today</span></div>' +
       '</main>';
+  }
+  // Study nook behind the buddy during focus: a cosy couch, a lamp, the night window and a warm mug.
+  function nook() {
+    const INK = '#4A2B22';
+    return '<svg class="nook-bg" viewBox="0 0 280 280" aria-hidden="true"><defs><clipPath id="nook-clip"><circle cx="140" cy="140" r="121"/></clipPath></defs>' +
+      '<g clip-path="url(#nook-clip)"><rect width="280" height="280" fill="#FBE6D6"/>' +
+      '<rect x="48" y="40" width="64" height="66" rx="10" fill="#3D4B7C" stroke="#A86F50" stroke-width="6"/><path d="M80 40v66M48 73h64" stroke="#A86F50" stroke-width="4"/>' +
+      '<circle cx="64" cy="56" r="2" fill="#fff"/><circle cx="98" cy="88" r="2" fill="#fff"/><circle cx="96" cy="54" r="7" fill="#FFF3C4"/>' +
+      '<circle cx="214" cy="96" r="58" fill="#FFE9A8" opacity=".55"/><path d="M196 64h36l10 30h-56z" fill="#F7C873" stroke="' + INK + '" stroke-width="4" stroke-linejoin="round"/><path d="M214 94v76" stroke="' + INK + '" stroke-width="4"/>' +
+      '<rect y="222" width="280" height="60" fill="#E2B48C"/><ellipse cx="140" cy="236" rx="96" ry="12" fill="#F0A3B4" opacity=".7"/>' +
+      '<rect x="44" y="128" width="192" height="80" rx="30" fill="#C96A80" stroke="' + INK + '" stroke-width="5"/>' +
+      '<rect x="56" y="182" width="168" height="38" rx="14" fill="#DC8599" stroke="' + INK + '" stroke-width="5"/>' +
+      '<rect x="26" y="160" width="44" height="62" rx="20" fill="#C96A80" stroke="' + INK + '" stroke-width="5"/><rect x="210" y="160" width="44" height="62" rx="20" fill="#C96A80" stroke="' + INK + '" stroke-width="5"/>' +
+      '<path d="M48 222v10M232 222v10" stroke="' + INK + '" stroke-width="6" stroke-linecap="round"/>' +
+      '<g class="mug"><path d="M220 136h26v22a9 9 0 0 1 -9 9h-8a9 9 0 0 1 -9 -9z" fill="#FFFFFF" stroke="' + INK + '" stroke-width="4" stroke-linejoin="round"/>' +
+      '<path d="M246 142q9 1 8 9t-9 7" fill="none" stroke="' + INK + '" stroke-width="4"/><ellipse cx="233" cy="138" rx="11" ry="3" fill="#C99366"/>' +
+      '<path class="steam s1" d="M228 128q-5 -7 0 -13t0 -13" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round"/>' +
+      '<path class="steam s2" d="M239 128q-5 -7 0 -13t0 -13" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round"/></g>' +
+      '</g></svg>';
   }
   function paintTimer() {
     const left = timerLeft();
@@ -769,6 +808,238 @@
     return '<section class="card install"><h2>Put me on your Home Screen</h2>' +
       '<ol><li>Tap the <b>Share</b> button ' + ICON.share + ' in Safari.</li><li>Choose <b>Add to Home Screen</b>.</li><li>Open me from the new icon. Then reminders and full screen work!</li></ol></section>';
   }
+
+  // ---------- first-run interview: the buddy asks a few questions and plans a weekly routine ----------
+  const WEEK = [1, 2, 3, 4, 5, 6, 0]; // Mon..Sun
+  const HOBBY_IDEAS = ['Drawing', 'Music', 'Dance', 'Reading', 'Sports', 'Gaming', 'Crafts', 'Cooking', 'Writing', 'Photography'];
+  const SETUP_STEPS = ['intro', 'grade', 'school', 'extras', 'hobbies', 'study', 'hobbytime', 'evening', 'preview'];
+  const toMin = (t) => { const p = (t || '0:0').split(':'); return +p[0] * 60 + +p[1]; };
+  const fromMin = (m) => String(Math.floor(m / 60) % 24).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
+  const fmtMins = (m) => m < 60 ? m + ' min' : (m % 60 ? (m / 60).toFixed(1).replace('.0', '') : m / 60) + (m === 60 ? ' hour' : ' hours');
+  // Rough guide many schools use: about 10 minutes of homework per grade, per school day.
+  function studySuggest(grade) { return grade <= 6 ? 45 : grade <= 8 ? 60 : grade <= 10 ? 90 : 120; }
+  function nextDateFor(wd) { const t = today(); return addDays(t, (wd - parse(t).getDay() + 7) % 7); }
+
+  function startSetup() {
+    const prev = state.setup || {};
+    ui.setup = { step: 0, a: Object.assign({ grade: 9, schoolDays: [1, 2, 3, 4, 5], schoolStart: '08:00', schoolEnd: '15:00', extras: [], hobbies: [], studyMins: null, weekendStudy: true, hobbyMins: 45, hobbyDays: 3, dinner: '19:00', doneBy: '21:30' }, prev) };
+    ui.view = 'setup';
+    render();
+  }
+  // read the text/time fields of the current step into the answers
+  function readSetupForm() {
+    const a = ui.setup.a;
+    document.querySelectorAll('[data-setup]').forEach((el) => { a[el.dataset.setup] = el.value; });
+  }
+
+  function planWeek(a) {
+    const tasks = [];
+    const warn = [];
+    const study = a.studyMins || studySuggest(a.grade);
+    const school = new Set(a.schoolDays);
+    // spread each hobby over the week, lighter days first
+    const hobbyOn = {};
+    WEEK.forEach((d) => { hobbyOn[d] = []; });
+    const order = [6, 0, 3, 1, 5, 2, 4];
+    a.hobbies.forEach((h, i) => {
+      for (let k = 0; k < Math.min(a.hobbyDays, 7); k++) hobbyOn[order[(i * 2 + k * Math.ceil(7 / a.hobbyDays)) % 7]].push(h);
+    });
+    WEEK.forEach((d) => {
+      const busy = [];
+      if (school.has(d)) busy.push([toMin(a.schoolStart), toMin(a.schoolEnd)]);
+      a.extras.filter((x) => x.days.includes(d)).forEach((x) => {
+        busy.push([toMin(x.time), toMin(x.time) + +x.mins + 15]);
+        tasks.push({ title: x.name, cat: x.cat, wd: d, time: x.time, remind: true });
+      });
+      busy.push([toMin(a.dinner), toMin(a.dinner) + 45]);
+      const end = toMin(a.doneBy) - 30;
+      let cursor = school.has(d) ? toMin(a.schoolEnd) + 45 : 10 * 60;
+      const place = (len) => {
+        let t = cursor;
+        for (let guard = 0; guard < 20; guard++) {
+          const hit = busy.find((b) => t < b[1] && t + len > b[0]);
+          if (!hit) break;
+          t = hit[1];
+        }
+        if (t + len > end) return null;
+        busy.push([t, t + len]);
+        cursor = t + len + 10; // a short break between blocks
+        return fromMin(t);
+      };
+      // study first, in blocks of up to 45 minutes
+      let left = school.has(d) ? study : (a.weekendStudy && (d === 0 || d === 6) ? 45 : 0);
+      let n = 0;
+      while (left > 0) {
+        const len = Math.min(45, left);
+        const at = place(len);
+        if (!at) { warn.push(DAY_SHORT[d]); break; }
+        n++;
+        tasks.push({ title: n === 1 ? (school.has(d) ? 'Homework first' : 'Weekend revision') : 'Study session ' + n, cat: 'study', wd: d, time: at, remind: n === 1 });
+        left -= len;
+      }
+      hobbyOn[d].slice(0, 2).forEach((h) => {
+        const at = place(+a.hobbyMins);
+        if (at) tasks.push({ title: h, cat: 'hobby', wd: d, time: at, remind: true });
+        else warn.push(DAY_SHORT[d]);
+      });
+      if (school.has((d + 1) % 7)) tasks.push({ title: 'Pack bag for tomorrow', cat: 'routine', wd: d, time: fromMin(end), remind: false });
+      tasks.push({ title: 'Wind down, screens off', cat: 'selfcare', wd: d, time: a.doneBy, remind: false });
+    });
+    return { tasks: tasks, warn: [...new Set(warn)], study: study };
+  }
+
+  function viewSetup() {
+    const st = ui.setup;
+    const a = st.a;
+    const key = SETUP_STEPS[st.step];
+    const b = esc(state.profile.buddyName);
+    const chip = (action, k, v, label, on) => '<button type="button" class="chip' + (on ? ' sel' : '') + '" data-action="' + action + '" data-key="' + k + '" data-val="' + v + '" aria-pressed="' + on + '">' + label + '</button>';
+    const dayChips = (k, list) => WEEK.map((d) => chip('setup-day', k, d, DAY_SHORT[d], list.includes(d))).join('');
+    let q = '';
+    let body = '';
+    let mood = 'happy';
+    if (key === 'intro') {
+      mood = 'dancing';
+      q = 'Can I ask you a few quick questions? Then I’ll plan your week for you, so you don’t have to add everything yourself!';
+    } else if (key === 'grade') {
+      q = 'First, what grade are you in?';
+      for (let g = 5; g <= 12; g++) body += chip('setup-pick', 'grade', g, 'Grade ' + g, a.grade === g);
+      body = '<div class="chips wrap">' + body + '</div>';
+    } else if (key === 'school') {
+      mood = 'neutral';
+      q = 'Which days do you go to school, and when?';
+      body = '<div class="chips wrap">' + dayChips('schoolDays', a.schoolDays) + '</div>' +
+        '<div class="two"><label class="field"><span>School starts</span><input type="time" data-setup="schoolStart" value="' + esc(a.schoolStart) + '"></label>' +
+        '<label class="field"><span>I get home</span><input type="time" data-setup="schoolEnd" value="' + esc(a.schoolEnd) + '"></label></div>';
+    } else if (key === 'extras') {
+      mood = 'neutral';
+      q = 'Do you have extra lessons or places to be? Like tutoring, a course, swimming or music class.';
+      const list = a.extras.map((x, i) => '<li><span><b>' + esc(x.name) + '</b><small>' + x.days.map((d) => DAY_SHORT[d]).join(', ') + ' at ' + esc(x.time) + ' · ' + fmtMins(+x.mins) + '</small></span><button type="button" class="icon-btn soft" data-action="setup-del-extra" data-i="' + i + '" aria-label="Remove ' + esc(x.name) + '">' + ICON.close + '</button></li>').join('');
+      const ex = st.extra || { name: '', days: [], time: '17:00', mins: 60, cat: 'study' };
+      st.extra = ex;
+      body = (list ? '<ul class="extras">' + list + '</ul>' : '') +
+        '<div class="card extra-form"><label class="field"><span>What is it?</span><input data-extra="name" maxlength="40" placeholder="e.g. Maths tutor, Swimming" value="' + esc(ex.name) + '" autocomplete="off"></label>' +
+        '<div class="chips wrap">' + chip('setup-extra-cat', 'cat', 'study', 'Lesson', ex.cat === 'study') + chip('setup-extra-cat', 'cat', 'hobby', 'Activity', ex.cat === 'hobby') + chip('setup-extra-cat', 'cat', 'routine', 'Other', ex.cat === 'routine') + '</div>' +
+        '<div class="chips wrap">' + WEEK.map((d) => chip('setup-extra-day', 'days', d, DAY_SHORT[d], ex.days.includes(d))).join('') + '</div>' +
+        '<div class="two"><label class="field"><span>Starts at</span><input type="time" data-extra="time" value="' + esc(ex.time) + '"></label>' +
+        '<label class="field"><span>How long</span><select data-extra="mins">' + [30, 45, 60, 90, 120, 180].map((m) => '<option value="' + m + '"' + (+ex.mins === m ? ' selected' : '') + '>' + fmtMins(m) + '</option>').join('') + '</select></label></div>' +
+        '<button type="button" class="ghost small" data-action="setup-add-extra">' + ICON.plus + ' Add this</button></div>';
+    } else if (key === 'hobbies') {
+      q = 'What are your hobbies? Pick as many as you like!';
+      const all = HOBBY_IDEAS.concat(a.hobbies.filter((h) => !HOBBY_IDEAS.includes(h)));
+      body = '<div class="chips wrap">' + all.map((h) => chip('setup-hobby', 'hobbies', esc(h), esc(h), a.hobbies.includes(h))).join('') + '</div>' +
+        '<div class="add-row"><input data-setup="newHobby" maxlength="24" placeholder="Something else?" autocomplete="off"><button type="button" class="ghost small" data-action="setup-add-hobby">Add</button></div>';
+    } else if (key === 'study') {
+      mood = 'study';
+      const sug = studySuggest(a.grade);
+      const cur = a.studyMins || sug;
+      q = 'How long can you study on school days? For grade ' + a.grade + ', I suggest about ' + fmtMins(sug) + ', in 45-minute blocks with little breaks.';
+      body = '<div class="chips wrap">' + [30, 45, 60, 90, 120, 150].map((m) => chip('setup-pick', 'studyMins', m, fmtMins(m) + (m === sug ? ' ★' : ''), cur === m)).join('') + '</div>' +
+        '<div class="card switches"><button type="button" class="switch" role="switch" aria-checked="' + !!a.weekendStudy + '" data-action="setup-flag" data-key="weekendStudy"><span><b>A little on weekends too</b><small>45 minutes on Saturday and Sunday</small></span><i></i></button></div>';
+    } else if (key === 'hobbytime') {
+      q = a.hobbies.length ? 'How much time for your hobbies? Little and often works best: 3 times a week for 30 to 45 minutes really adds up!' : 'No hobbies picked, that’s okay! You can skip this one.';
+      body = '<p class="label">Each time</p><div class="chips wrap">' + [20, 30, 45, 60, 90].map((m) => chip('setup-pick', 'hobbyMins', m, fmtMins(m) + (m === 45 ? ' ★' : ''), +a.hobbyMins === m)).join('') + '</div>' +
+        '<p class="label">Times a week for each hobby</p><div class="chips wrap">' + [1, 2, 3, 4, 5].map((n) => chip('setup-pick', 'hobbyDays', n, n + '×' + (n === 3 ? ' ★' : ''), +a.hobbyDays === n)).join('') + '</div>';
+    } else if (key === 'evening') {
+      mood = 'neutral';
+      q = 'Last one! When is dinner, and when do you want to be done for the day? Sleep matters for studying too.';
+      body = '<div class="two"><label class="field"><span>Dinner</span><input type="time" data-setup="dinner" value="' + esc(a.dinner) + '"></label>' +
+        '<label class="field"><span>Done for the day</span><input type="time" data-setup="doneBy" value="' + esc(a.doneBy) + '"></label></div>';
+    } else {
+      mood = 'dancing';
+      const plan = planWeek(a);
+      st.plan = plan;
+      q = 'Here’s your week! Everything repeats weekly, and you can change or delete any task later.' + (plan.warn.length ? ' Some days were too full to fit everything (' + plan.warn.join(', ') + ').' : '');
+      body = '<div class="plan-days">' + WEEK.map((d) => {
+        const list = plan.tasks.filter((t) => t.wd === d).sort((x, y) => x.time.localeCompare(y.time));
+        return '<section class="card plan-day"><h3>' + ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][d] + '</h3><ul>' +
+          list.map((t) => '<li><time>' + t.time + '</time><span class="tag" style="background:' + cat(t.cat).color + '">' + cat(t.cat).name + '</span>' + esc(t.title) + '</li>').join('') + '</ul></section>';
+      }).join('') + '</div>';
+    }
+    let dots = '';
+    for (let i = 1; i < SETUP_STEPS.length; i++) dots += '<span class="' + (i <= st.step ? 'on' : '') + '"></span>';
+    const last = key === 'preview';
+    return '<main class="screen setup">' +
+      (st.step ? '<div class="setup-dots" aria-label="Question ' + st.step + ' of ' + (SETUP_STEPS.length - 1) + '">' + dots + '</div>' : '') +
+      '<div class="setup-talk"><div class="setup-buddy">' + buddy(mood, st.step ? 96 : 150) + '</div><div class="bubble setup-q" aria-live="polite">' + q + '</div></div>' +
+      (body ? '<div class="setup-body pop">' + body + '</div>' : '') +
+      '<div class="setup-foot">' +
+      (st.step ? '<button type="button" class="ghost" data-action="setup-back">Back</button>' : '<button type="button" class="ghost" data-action="setup-skip">I’ll plan myself</button>') +
+      '<button type="button" class="primary" data-action="' + (last ? 'setup-done' : 'setup-next') + '">' + (st.step === 0 ? 'Let’s do it!' : last ? 'Add to my plan' : 'Next') + '</button></div></main>';
+  }
+  function finishSetup(apply) {
+    if (apply) {
+      const plan = ui.setup.plan || planWeek(ui.setup.a);
+      state.tasks = state.tasks.filter((t) => !t.auto);
+      plan.tasks.forEach((t) => state.tasks.push({ id: uid(), title: t.title, cat: t.cat, date: nextDateFor(t.wd), time: t.time, remind: t.remind, repeat: true, done: {}, auto: true }));
+      const a = Object.assign({}, ui.setup.a); delete a.newHobby;
+      state.setup = a;
+    }
+    state.planned = true;
+    ui.setup = null;
+    ui.view = 'today';
+    save(); render();
+    if (apply) { play('celebrate'); confetti(); toast('Your week is planned!'); }
+    if (!state.tutorialDone) setTimeout(() => goTourStep(0), 700);
+  }
+  const setupActions = {
+    'setup-next'() {
+      readSetupForm();
+      const st = ui.setup;
+      if (SETUP_STEPS[st.step] === 'extras' && st.extra && st.extra.name.trim()) setupActions['setup-add-extra']();
+      st.step = Math.min(st.step + 1, SETUP_STEPS.length - 1);
+      play('tap'); render(); window.scrollTo(0, 0);
+    },
+    'setup-back'() { readSetupForm(); ui.setup.step = Math.max(0, ui.setup.step - 1); play('tap'); render(); window.scrollTo(0, 0); },
+    'setup-skip'() { play('tap'); finishSetup(false); },
+    'setup-done'() { finishSetup(true); },
+    'setup-pick'(el) { readSetupForm(); ui.setup.a[el.dataset.key] = +el.dataset.val; play('tap'); render(); },
+    'setup-flag'(el) { readSetupForm(); ui.setup.a[el.dataset.key] = !ui.setup.a[el.dataset.key]; play('tap'); render(); },
+    'setup-day'(el) {
+      readSetupForm();
+      const list = ui.setup.a[el.dataset.key]; const d = +el.dataset.val; const i = list.indexOf(d);
+      if (i >= 0) list.splice(i, 1); else list.push(d);
+      play('tap'); render();
+    },
+    'setup-hobby'(el) {
+      readSetupForm();
+      const list = ui.setup.a.hobbies; const h = el.dataset.val; const i = list.indexOf(h);
+      if (i >= 0) list.splice(i, 1); else list.push(h);
+      play('tap'); render();
+    },
+    'setup-add-hobby'() {
+      readSetupForm();
+      const a = ui.setup.a; const h = String(a.newHobby || '').trim().slice(0, 24);
+      a.newHobby = '';
+      if (h && !a.hobbies.includes(h)) a.hobbies.push(h);
+      play('pop'); render();
+    },
+    'setup-extra-cat'(el) { readExtra(); ui.setup.extra.cat = el.dataset.val; play('tap'); render(); },
+    'setup-extra-day'(el) {
+      readExtra();
+      const list = ui.setup.extra.days; const d = +el.dataset.val; const i = list.indexOf(d);
+      if (i >= 0) list.splice(i, 1); else list.push(d);
+      play('tap'); render();
+    },
+    'setup-add-extra'() {
+      readExtra();
+      const ex = ui.setup.extra;
+      if (!ex.name.trim()) { toast('Give it a name first, like “Maths tutor”.'); return; }
+      if (!ex.days.length) { toast('Which days is it on? Tap the days.'); return; }
+      ui.setup.a.extras.push({ name: ex.name.trim(), days: ex.days.slice().sort(), time: ex.time || '17:00', mins: +ex.mins || 60, cat: ex.cat });
+      ui.setup.extra = null;
+      play('pop'); render();
+    },
+    'setup-del-extra'(el) { ui.setup.a.extras.splice(+el.dataset.i, 1); play('uncheck'); render(); }
+  };
+  function readExtra() {
+    const ex = ui.setup.extra;
+    document.querySelectorAll('[data-extra]').forEach((el) => { ex[el.dataset.extra] = el.value; });
+  }
+  // the hobby box adds on Enter too
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.target.dataset && e.target.dataset.setup === 'newHobby') { e.preventDefault(); setupActions['setup-add-hobby'](); }
+  });
 
   function tourSteps() {
     const b = esc(state.profile.buddyName);
@@ -837,7 +1108,7 @@
   // ---------- render + events ----------
   function render() {
     const app = document.getElementById('app');
-    const views = { onboard: viewOnboard, today: viewToday, week: viewWeek, closet: viewCloset, chat: viewChat, focus: viewFocus };
+    const views = { setup: viewSetup, onboard: viewOnboard, today: viewToday, week: viewWeek, closet: viewCloset, chat: viewChat, focus: viewFocus };
     if (!state.profile) ui.view = 'onboard';
     app.innerHTML = views[ui.view]();
     app.dataset.view = ui.view;
@@ -946,6 +1217,7 @@
   };
   function app() { return document.getElementById('app'); }
 
+  Object.assign(actions, setupActions, { 'setup'() { play('pop'); startSetup(); } });
   document.addEventListener('click', (e) => {
     const el = e.target.closest('[data-action]');
     if (!el) return;
@@ -969,7 +1241,8 @@
       ui.rebuddy = false;
       ui.view = 'today';
       save(); play('celebrate'); render();
-      if (!state.tutorialDone) setTimeout(() => goTourStep(0), 600);
+      if (!state.planned) startSetup();
+      else if (!state.tutorialDone) setTimeout(() => goTourStep(0), 600);
     } else if (f.dataset.form === 'task') {
       syncDraftFromForm();
       const d = ui.draft;
@@ -992,6 +1265,29 @@
   });
   document.addEventListener('keydown', (e) => { if (e.key !== 'Escape') return; if (ui.draft) closeSheet(); if (ui.account) closeAccount(); });
   window.addEventListener('resize', () => { if (ui.tour != null) renderTour(); });
+  // Keep sheets above the on-screen keyboard: track how much of the screen the keyboard covers.
+  if (window.visualViewport) {
+    const vv = window.visualViewport;
+    const fit = () => {
+      const kb = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
+      document.documentElement.style.setProperty('--kb', kb + 'px');
+      document.documentElement.style.setProperty('--vvh', Math.round(vv.height) + 'px');
+      document.documentElement.classList.toggle('kb-open', kb > 80);
+    };
+    vv.addEventListener('resize', fit);
+    vv.addEventListener('scroll', fit);
+    fit();
+  }
+  // the field you tap scrolls into view inside the sheet, not the page
+  document.addEventListener('focusin', (e) => {
+    const sheet = e.target.closest && e.target.closest('.sheet');
+    if (sheet && /INPUT|SELECT|TEXTAREA/.test(e.target.tagName)) setTimeout(() => e.target.scrollIntoView({ block: 'center', behavior: 'smooth' }), 320);
+  });
+  // After turning the phone, iOS can leave the page zoomed or shifted so taps miss. Reset and redraw.
+  window.addEventListener('orientationchange', () => setTimeout(() => {
+    window.scrollTo(0, 0);
+    if (!ui.draft && !ui.account) render();
+  }, 350));
   document.addEventListener('change', (e) => {
     if (e.target.dataset.change === 'focus-task') timer.taskId = e.target.value || null;
   });
