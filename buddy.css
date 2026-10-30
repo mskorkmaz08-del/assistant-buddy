@@ -1,0 +1,52 @@
+/* Buddy motion: slow, cosy loops. Head sways from the neck, eyes blink, body breathes. */
+.buddy .bb-head { transform-box: view-box; transform-origin: 100px 160px; }
+.buddy .bb-body { transform-box: view-box; transform-origin: 100px 220px; }
+.buddy .bb-eyes { transform-box: fill-box; transform-origin: center; animation: bb-blink 4.2s infinite; }
+.buddy .bb-wave { transform-box: view-box; transform-origin: 140px 156px; }
+.buddy .bb-tail { transform-box: view-box; transform-origin: 154px 204px; animation: bb-tail 2.6s ease-in-out infinite; }
+.buddy .bb-note { transform-box: fill-box; transform-origin: center; }
+
+/* waiting: gentle sway and breathing, like the cabin video */
+.mood-neutral .bb-head { animation: bb-sway 3.2s ease-in-out infinite; }
+.mood-neutral .bb-body { animation: bb-breathe 3.2s ease-in-out infinite; }
+
+/* happy: bouncier sway with a little hop */
+.mood-happy .bb-head { animation: bb-sway-big 1.6s ease-in-out infinite; }
+.mood-happy .bb-body { animation: bb-hop 1.6s ease-in-out infinite; }
+
+/* dancing: bop to the beat, wave the arm, floating notes */
+.mood-dancing .bb-head { animation: bb-bop-head 0.9s ease-in-out infinite; }
+.mood-dancing .bb-body { animation: bb-bop 0.45s ease-in-out infinite alternate; }
+.mood-dancing .bb-wave { animation: bb-wave 0.45s ease-in-out infinite alternate; }
+.mood-dancing .bb-note.n1 { animation: bb-float 1.8s ease-in-out infinite; }
+.mood-dancing .bb-note.n2 { animation: bb-float 1.8s ease-in-out 0.9s infinite; }
+
+/* sad: head hangs, slow sigh, tear wobbles */
+.mood-sad .bb-head { animation: bb-droop 5s ease-in-out infinite; }
+.mood-sad .bb-body { animation: bb-sigh 5s ease-in-out infinite; }
+.mood-sad .bb-eyes { animation-duration: 6s; }
+.mood-sad .bb-tear { animation: bb-tear 2.5s ease-in-out infinite; }
+
+@keyframes bb-blink { 0%, 90%, 100% { transform: scaleY(1); } 94% { transform: scaleY(0.1); } }
+@keyframes bb-sway { 0%, 100% { transform: rotate(-3deg); } 50% { transform: rotate(3deg); } }
+@keyframes bb-sway-big { 0%, 100% { transform: rotate(-5deg); } 50% { transform: rotate(5deg); } }
+@keyframes bb-breathe { 0%, 100% { transform: scale(1, 1); } 50% { transform: scale(1.015, 0.985); } }
+@keyframes bb-hop {
+  0%, 50%, 100% { transform: translateY(0) scale(1, 1); }
+  20% { transform: translateY(-7px) scale(0.98, 1.02); }
+  45% { transform: translateY(0) scale(1.03, 0.97); }
+  70% { transform: translateY(-7px) scale(0.98, 1.02); }
+  95% { transform: translateY(0) scale(1.03, 0.97); }
+}
+@keyframes bb-bop-head { 0%, 100% { transform: rotate(-8deg); } 50% { transform: rotate(8deg); } }
+@keyframes bb-bop { from { transform: translateY(0) scale(1.03, 0.97); } to { transform: translateY(-10px) scale(0.98, 1.02); } }
+@keyframes bb-wave { from { transform: rotate(-18deg); } to { transform: rotate(14deg); } }
+@keyframes bb-float { 0% { transform: translateY(6px); opacity: 0; } 30% { opacity: 1; } 100% { transform: translateY(-14px) rotate(10deg); opacity: 0; } }
+@keyframes bb-droop { 0%, 100% { transform: translateY(4px) rotate(4deg); } 50% { transform: translateY(6px) rotate(1deg); } }
+@keyframes bb-sigh { 0%, 100% { transform: scale(1, 1); } 40% { transform: scale(1.02, 0.97); } }
+@keyframes bb-tear { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(3px); } }
+@keyframes bb-tail { 0%, 100% { transform: rotate(-6deg); } 50% { transform: rotate(6deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .buddy * { animation: none !important; }
+}
