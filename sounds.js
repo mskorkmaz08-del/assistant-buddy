@@ -1,11 +1,9 @@
-// Soft, cosy sound effects and an optional lo-fi music loop, all made live with Web Audio (no audio files).
+// Soft, cosy sound effects, an optional lo-fi music loop and rain, all made live with Web Audio (no audio files).
 (function () {
   let ctx = null;
   let master = null;
   let musicGain = null;
   let musicTimer = null;
-  let nextBar = 0;
-  let bar = 0;
 
   // On iPhone the ring/silent switch mutes web audio unless the page asks for media playback.
   function playbackSession() {
@@ -67,36 +65,151 @@
     }
   };
 
-  // Lo-fi loop: warm pad chords plus a music-box melody, about 72 bpm.
-  const CHORDS = [
-    [174.6, 220.0, 261.6, 329.6], // Fmaj7
-    [164.8, 196.0, 246.9, 293.7], // Em7
-    [146.8, 174.6, 220.0, 261.6], // Dm7
-    [130.8, 164.8, 196.0, 246.9]  // Cmaj7
+  // Lo-fi hip hop loop: dusty electric-piano jazz chords, a soft swung boom-bap beat,
+  // round bass, an occasional lazy melody note, vinyl crackle and a gentle tape wobble.
+  const BPM = 74;
+  const STEP = 60 / BPM / 4; // one 16th note
+  const SWING = 0.18;        // late off-beat 16ths for that lazy feel
+  // ii-V-I-vi in C: Dm9, G13, Cmaj9, Am9. Each chord: bass root + piano voicing (Hz).
+  const PROG = [
+    { bass: 73.42, keys: [174.61, 261.63, 329.63, 440.00] }, // Dm9:  F C E A
+    { bass: 98.00, keys: [174.61, 246.94, 329.63, 440.00] }, // G13:  F B E A
+    { bass: 65.41, keys: [164.81, 246.94, 293.66, 392.00] }, // Cmaj9: E B D G
+    { bass: 55.00, keys: [196.00, 261.63, 329.63, 493.88] }  // Am9:  G C E B
   ];
-  const MELODY = [
-    [659, 0, 523, 0, 587, 0, 0, 0],
-    [587, 0, 494, 0, 523, 0, 392, 0],
-    [523, 0, 440, 0, 0, 0, 587, 0],
-    [494, 0, 392, 0, 440, 0, 0, 0]
-  ];
-  const BAR = 8 * 0.42; // eight soft steps per bar
+  const SCALE = [392.00, 440.00, 523.25, 587.33, 659.25]; // C pentatonic, mid register
+  // 16-step patterns (1 = hit). Kick and snare: classic laid-back boom-bap.
+  const KICK = [1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0];
+  const SNARE = [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0];
+  const HAT = [1, 0, 1, 0, 1, 0, 1, 1, 1, 0, 1, 0, 1, 0, 1, 0];
 
-  function scheduleBar(t) {
-    const chord = CHORDS[bar % 4];
-    chord.forEach((f) => note(f, t, BAR * 0.98, { type: 'triangle', vol: 0.035, attack: 0.6, dest: musicGain }));
-    note(chord[0] / 2, t, BAR * 0.9, { type: 'sine', vol: 0.06, attack: 0.05, dest: musicGain });
-    MELODY[bar % 4].forEach((f, i) => {
-      if (f) note(f * 2, t + i * 0.42, 0.7, { type: 'sine', vol: 0.03, dest: musicGain });
+  let noiseBuf = null;
+  let wobble = null;
+  let drumBus = null;
+  let crackle = null;
+  let step = 0;
+  let nextStep = 0;
+
+  function noise() {
+    if (!noiseBuf) {
+      noiseBuf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
+      const d = noiseBuf.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    }
+    return noiseBuf;
+  }
+
+  // Electric-piano note: warm fundamental, soft octave and a quick bell "tine", all wobbling a little.
+  function keys(freq, t, dur, vol) {
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + 0.012);
+    g.gain.exponentialRampToValueAtTime(vol * 0.35, t + 0.5);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    g.connect(musicGain);
+    [[1, 'sine', 1], [2, 'sine', 0.18], [7.1, 'sine', 0.05]].forEach((p, i) => {
+      const o = ctx.createOscillator();
+      const og = ctx.createGain();
+      o.type = p[1];
+      o.frequency.value = freq * p[0];
+      o.detune.value = (Math.random() - 0.5) * 8;
+      wobble.connect(o.detune);
+      og.gain.setValueAtTime(p[2], t);
+      if (i === 2) og.gain.exponentialRampToValueAtTime(0.0001, t + 0.25);
+      o.connect(og); og.connect(g);
+      o.start(t); o.stop(t + dur + 0.05);
     });
-    bar++;
+  }
+  function bass(freq, t, dur) {
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = 'triangle';
+    o.frequency.value = freq;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.22, t + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(musicGain);
+    o.start(t); o.stop(t + dur + 0.05);
+  }
+  function kick(t, vol) {
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.frequency.setValueAtTime(110, t);
+    o.frequency.exponentialRampToValueAtTime(42, t + 0.18);
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.4);
+    o.connect(g); g.connect(drumBus);
+    o.start(t); o.stop(t + 0.45);
+  }
+  function hiss(t, dur, vol, type, freq, q) {
+    const s = ctx.createBufferSource();
+    s.buffer = noise();
+    const f = ctx.createBiquadFilter();
+    f.type = type; f.frequency.value = freq; f.Q.value = q || 0.7;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    s.connect(f); f.connect(g); g.connect(drumBus);
+    s.start(t, Math.random() * 0.5); s.stop(t + dur + 0.02);
+  }
+  function snare(t) {
+    hiss(t, 0.22, 0.22, 'bandpass', 1900, 0.8);
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.frequency.setValueAtTime(190, t);
+    o.frequency.exponentialRampToValueAtTime(140, t + 0.1);
+    g.gain.setValueAtTime(0.12, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.14);
+    o.connect(g); g.connect(drumBus);
+    o.start(t); o.stop(t + 0.16);
+  }
+
+  function scheduleStep(i, t) {
+    const s = i % 16;
+    const bar = Math.floor(i / 16);
+    const chord = PROG[bar % 4];
+    const human = () => (Math.random() - 0.5) * 0.012;
+    if (KICK[s]) kick(t + human(), s === 0 ? 0.55 : 0.42);
+    if (SNARE[s]) snare(t + 0.01 + human());
+    if (HAT[s]) hiss(t + human(), s % 4 === 2 ? 0.05 : 0.035, (s % 2 ? 0.035 : 0.06) * (0.7 + Math.random() * 0.3), 'highpass', 7000);
+    if (s === 0) {
+      // lazy strum, a touch behind the beat
+      chord.keys.forEach((f, k) => keys(f, t + 0.02 + k * 0.022, STEP * 15, 0.055));
+      bass(chord.bass, t, STEP * 6);
+    }
+    if (s === 10) bass(chord.bass * (bar % 2 ? 1.5 : 1), t, STEP * 5);
+    if (s === 11 && bar % 2) chord.keys.slice(1).forEach((f, k) => keys(f, t + k * 0.018, STEP * 5, 0.03));
+    // a few soft melody notes every other bar
+    if (bar % 2 === 1 && (s === 2 || s === 6 || s === 13) && Math.random() < 0.6) {
+      keys(SCALE[Math.floor(Math.random() * SCALE.length)], t + human(), STEP * 6, 0.03);
+    }
   }
 
   function musicLoop() {
-    while (nextBar < ctx.currentTime + 1.5) {
-      scheduleBar(nextBar);
-      nextBar += BAR;
+    while (nextStep < ctx.currentTime + 0.4) {
+      const late = step % 2 ? SWING * STEP : 0;
+      scheduleStep(step, nextStep + late);
+      nextStep += STEP;
+      step++;
     }
+  }
+
+  // Looping vinyl crackle: faint hiss plus random dust pops.
+  function startCrackle() {
+    const len = ctx.sampleRate * 4;
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) {
+      d[i] = (Math.random() * 2 - 1) * 0.012;
+      if (Math.random() < 0.0004) { const a = (Math.random() * 0.5 + 0.2) * (Math.random() < 0.5 ? -1 : 1); for (let k = 0; k < 30 && i + k < len; k++) d[i + k] += a * Math.exp(-k / 6); }
+    }
+    const s = ctx.createBufferSource();
+    s.buffer = buf; s.loop = true;
+    const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 2500; f.Q.value = 0.4;
+    const g = ctx.createGain(); g.gain.value = 0.5;
+    s.connect(f); f.connect(g); g.connect(musicGain);
+    s.start();
+    return s;
   }
 
   const music = {
@@ -105,26 +218,38 @@
       playbackSession();
       const c = audio(); if (!c || this.playing) return;
       musicGain = c.createGain();
-      const lp = c.createBiquadFilter();
-      lp.type = 'lowpass';
-      lp.frequency.value = 1800;
-      musicGain.connect(lp);
-      lp.connect(master);
+      // warm, slightly muffled, gently saturated: the "dusty tape" sound
+      const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2600; lp.Q.value = 0.5;
+      const hp = c.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 35;
+      const sat = c.createWaveShaper();
+      const curve = new Float32Array(1024);
+      for (let i = 0; i < 1024; i++) { const x = i / 512 - 1; curve[i] = Math.tanh(1.6 * x) / Math.tanh(1.6); }
+      sat.curve = curve;
+      musicGain.connect(sat); sat.connect(lp); lp.connect(hp); hp.connect(master);
+      drumBus = c.createGain(); drumBus.gain.value = 0.8; drumBus.connect(musicGain);
+      // tape wobble: slow pitch drift on the piano
+      const lfo = c.createOscillator(); lfo.frequency.value = 0.45;
+      wobble = c.createGain(); wobble.gain.value = 9; // cents
+      lfo.connect(wobble); lfo.start();
+      this.lfo = lfo;
+      crackle = startCrackle();
       musicGain.gain.setValueAtTime(0.0001, c.currentTime);
-      musicGain.gain.exponentialRampToValueAtTime(1, c.currentTime + 2);
-      nextBar = c.currentTime + 0.1;
-      bar = 0;
+      musicGain.gain.exponentialRampToValueAtTime(0.9, c.currentTime + 2);
+      nextStep = c.currentTime + 0.1;
+      step = 0;
       musicLoop();
-      musicTimer = setInterval(musicLoop, 400);
+      musicTimer = setInterval(musicLoop, 100);
       this.playing = true;
     },
     stop() {
       if (!this.playing) return;
       clearInterval(musicTimer);
       const g = musicGain;
+      const lfo = this.lfo;
+      const cr = crackle;
       g.gain.setValueAtTime(g.gain.value, ctx.currentTime);
       g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.8);
-      setTimeout(() => g.disconnect(), 1000);
+      setTimeout(() => { g.disconnect(); try { lfo.stop(); cr.stop(); } catch (e) { /* already stopped */ } }, 1000);
       this.playing = false;
     }
   };
@@ -171,7 +296,13 @@
   };
 
   // Coming back to the app after locking the phone: wake the audio up again.
-  document.addEventListener('visibilitychange', () => { if (!document.hidden && ctx && ctx.state !== 'running') ctx.resume().catch(() => {}); });
+  // Leaving the app (home button, app switcher, closing the tab) pauses all sound; coming back resumes it.
+  function pauseAll() { if (ctx && ctx.state === 'running') ctx.suspend().catch(() => {}); }
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) pauseAll();
+    else if (ctx && ctx.state !== 'running') ctx.resume().catch(() => {});
+  });
+  window.addEventListener('pagehide', pauseAll);
 
   window.Sounds = { sfx: sfx, music: music, rain: rain };
 })();

@@ -1,5 +1,5 @@
 // Keeps the app working offline: serve cached files first, refresh them in the background.
-const CACHE = 'bearbuddy-v3';
+const CACHE = 'bearbuddy-v4';
 const FILES = ['./', 'index.html', 'styles.css', 'buddy.css', 'buddy.js', 'sounds.js', 'app.js', 'config.js', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png'];
 
 self.addEventListener('install', (e) => {
